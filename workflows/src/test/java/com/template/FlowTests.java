@@ -74,38 +74,38 @@ public class FlowTests {
     }
 
     //Transfer metal flow tests
-//    @Test
-//    public void transactionHasOneInputAndOneOutput() throws Exception {
-//        IssueMetalFlow flow = new IssueMetalFlow("Gold", 10, a.getInfo().getLegalIdentities().get(0));
-//        TransferMetalFlow transferFlow = new TransferMetalFlow("Gold", 10, b.getInfo().getLegalIdentities().get(0));
-//
-//        CordaFuture<SignedTransaction> future = mint.startFlow(flow);
-//        setup();
-//
-//        CordaFuture<SignedTransaction> futureTransfer = a.startFlow(transferFlow);
-//        setup();
-//        SignedTransaction signedTransaction = futureTransfer.get();
-//
-//        assertEquals(1, signedTransaction.getTx().getOutputs().size());
-//        assertEquals(1, signedTransaction.getTx().getInputs().size());
-//    }
-//
-//    @Test
-//    public void transactionHasTransferCommandWithOwnerAsSigner() throws Exception {
-//        IssueMetalFlow flow = new IssueMetalFlow("Gold", 10, a.getInfo().getLegalIdentities().get(0));
-//        TransferMetalFlow transferFlow = new TransferMetalFlow("Gold", 10, b.getInfo().getLegalIdentities().get(0));
-//
-//        CordaFuture<SignedTransaction> future = mint.startFlow(flow);
-//        setup();
-//
-//        CordaFuture<SignedTransaction> futureTransfer = a.startFlow(transferFlow);
-//        setup();
-//        SignedTransaction signedTransaction = futureTransfer.get();
-//
-//        assertEquals(1, signedTransaction.getTx().getCommands().size());
-//        Command command = signedTransaction.getTx().getCommands().get(0);
-//
-//        assert(command.getValue() instanceof MetalContract.Commands.Transfer);
-//        assertTrue(command.getSigners().contains(a.getInfo().getLegalIdentities().get(0).getOwningKey()));
-//    }
+    @Test
+    public void transactionHasOneInputAndOneOutput() throws Exception {
+        IssueMetalFlow flow = new IssueMetalFlow("Gold", 10, A.getInfo().getLegalIdentities().get(0));
+        TransferMetalFlow transferFlow = new TransferMetalFlow("Gold", 10, B.getInfo().getLegalIdentities().get(0));
+
+        CordaFuture<SignedTransaction> future = Mint.startFlow(flow);
+        setup();
+
+        CordaFuture<SignedTransaction> futureTransfer = A.startFlow(transferFlow);
+        setup();
+        SignedTransaction signedTransaction = futureTransfer.get();
+
+        assertEquals(1, signedTransaction.getTx().getOutputs().size());
+        assertEquals(1, signedTransaction.getTx().getInputs().size());
+    }
+
+    @Test
+    public void transactionHasTransferCommandWithOwnerAsSigner() throws Exception {
+        IssueMetalFlow flow = new IssueMetalFlow("Gold", 10, A.getInfo().getLegalIdentities().get(0));
+        TransferMetalFlow transferFlow = new TransferMetalFlow("Gold", 10, B.getInfo().getLegalIdentities().get(0));
+
+        CordaFuture<SignedTransaction> future = Mint.startFlow(flow);
+        setup();
+
+        CordaFuture<SignedTransaction> futureTransfer = A.startFlow(transferFlow);
+        setup();
+        SignedTransaction signedTransaction = futureTransfer.get();
+
+        assertEquals(1, signedTransaction.getTx().getCommands().size());
+        Command command = signedTransaction.getTx().getCommands().get(0);
+
+        assert(command.getValue() instanceof MetalContract.Commands.Transfer);
+        assertTrue(command.getSigners().contains(A.getInfo().getLegalIdentities().get(0).getOwningKey()));
+    }
 }

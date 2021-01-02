@@ -1,17 +1,19 @@
 package com.template.flows;
 
 import co.paralleluniverse.fibers.Suspendable;
-import com.template.contracts.TemplateContract;
-import com.template.states.TemplateState;
+import com.template.contracts.MetalContract;
+import com.template.states.MetalState;
+import net.corda.core.contracts.Command;
+import net.corda.core.contracts.StateAndRef;
 import net.corda.core.flows.*;
 import net.corda.core.identity.Party;
+import net.corda.core.node.services.Vault;
+import net.corda.core.node.services.vault.QueryCriteria;
 import net.corda.core.transactions.SignedTransaction;
 import net.corda.core.transactions.TransactionBuilder;
 import net.corda.core.utilities.ProgressTracker;
 
-import java.util.Arrays;
 import java.util.List;
-import java.util.stream.Collectors;
 
 // ******************
 // * Initiator flow *
@@ -20,57 +22,98 @@ import java.util.stream.Collectors;
 @StartableByRPC
 public class TransferMetalFlow extends FlowLogic<SignedTransaction> {
 
-    // We will not use these ProgressTracker for this Hello-World sample
-    private final ProgressTracker progressTracker = new ProgressTracker();
+    //private variables
+    private String metalName;
+    private int weight;
+    private Party newOwner;
+    private int x = 0;
+
+    public TransferMetalFlow(String metalName, int weight, Party newOwner) {
+        this.metalName = metalName;
+        this.weight = weight;
+        this.newOwner = newOwner;
+    }
+
+    private final ProgressTracker.Step RETRIEVING_NOTARY = new ProgressTracker.Step("Retrieving the Notary.");
+    private final ProgressTracker.Step GENERATING_TRANSACTION = new ProgressTracker.Step("Generating transaction.");
+    private final ProgressTracker.Step SIGNING_TRANSACTION = new ProgressTracker.Step("Signing transaction with our private key.");
+    private final ProgressTracker.Step COUNTERPARTY_SESSION = new ProgressTracker.Step("Sending flow to counterparty.");
+    private final ProgressTracker.Step FINALISING_TRANSACTION = new ProgressTracker.Step("Obtaining notary signature and recording transaction.");
+
+
+    private final ProgressTracker progressTracker = new ProgressTracker(
+            RETRIEVING_NOTARY,
+            GENERATING_TRANSACTION,
+            SIGNING_TRANSACTION,
+            COUNTERPARTY_SESSION,
+            FINALISING_TRANSACTION
+    );
+
     @Override
     public ProgressTracker getProgressTracker() {
         return progressTracker;
     }
 
-    //private variables
-    private Party sender ;
-    private Party receiver;
 
-    //public constructor
-    public TransferMetalFlow(Party sendTo){
-        this.receiver = sendTo;
-    }
 
     @Suspendable
     @Override
     public SignedTransaction call() throws FlowException {
-        //Hello World message
-        String msg = "Hello-World";
-        this.sender = getOurIdentity();
+        //Initiator flow logic goes here
 
-        // Step 1. Get a reference to the notary service on our network and our key pair.
-        // Note: ongoing work to support multiple notary identities is still in progress.
-        final Party notary = getServiceHub().getNetworkMapCache().getNotaryIdentities().get(0);
+        //Retrieve notary identity
+        progressTracker.setCurrentStep(RETRIEVING_NOTARY);
+        Party notary = getServiceHub().getNetworkMapCache().getNotaryIdentities().get(0);
 
-        //Compose the State that carries the Hello World message
-        final TemplateState output = new TemplateState(msg,sender,receiver);
+        StateAndRef<MetalState> inputState = checkForMetalStates();
 
-        // Step 3. Create a new TransactionBuilder object.
-        final TransactionBuilder builder = new TransactionBuilder(notary);
+        Party issuer = inputState.getState().getData().getIssuer();
 
-        // Step 4. Add the iou as an output state, as well as a command to the transaction builder.
-        builder.addOutputState(output);
-        builder.addCommand(new TemplateContract.Commands.Send(), Arrays.asList(this.sender.getOwningKey(),this.receiver.getOwningKey()) );
+        //Create transaction components
+        MetalState outputState = new MetalState(metalName, weight, issuer, newOwner);
+        Command command = new Command(new MetalContract.Commands.Transfer(), getOurIdentity().getOwningKey());
 
+        //create trx builder
+        progressTracker.setCurrentStep(GENERATING_TRANSACTION);
+        TransactionBuilder txB = new TransactionBuilder(notary)
+                .addInputState(inputState)
+                .addOutputState(outputState, MetalContract.CID)
+                .addCommand(command);
 
-        // Step 5. Verify and sign it with our KeyPair.
-        builder.verify(getServiceHub());
-        final SignedTransaction ptx = getServiceHub().signInitialTransaction(builder);
+        //Sign the transaction
+        progressTracker.setCurrentStep(SIGNING_TRANSACTION);
+        SignedTransaction signedTx = getServiceHub().signInitialTransaction(txB);
 
+        //Create session with Counterparty
+        progressTracker.setCurrentStep(COUNTERPARTY_SESSION);
+        FlowSession otherPartySession = initiateFlow(newOwner);
+        FlowSession mintPartySession = initiateFlow(issuer);
 
-        // Step 6. Collect the other party's signature using the SignTransactionFlow.
-        List<Party> otherParties = output.getParticipants().stream().map(el -> (Party)el).collect(Collectors.toList());
-        otherParties.remove(getOurIdentity());
-        List<FlowSession> sessions = otherParties.stream().map(el -> initiateFlow(el)).collect(Collectors.toList());
+        //Finalize and send to Counterparty
+        progressTracker.setCurrentStep(FINALISING_TRANSACTION);
+        return subFlow(new FinalityFlow(signedTx, otherPartySession, mintPartySession));
 
-        SignedTransaction stx = subFlow(new CollectSignaturesFlow(ptx, sessions));
+    }
 
-        // Step 7. Assuming no exceptions, we can now finalise the transaction
-        return subFlow(new FinalityFlow(stx, sessions));
+    private StateAndRef<MetalState> checkForMetalStates() throws FlowException{
+        QueryCriteria generalCriteria = new QueryCriteria.VaultQueryCriteria(Vault.StateStatus.UNCONSUMED);
+
+        List<StateAndRef<MetalState>> metalStates = getServiceHub().getVaultService().queryBy(MetalState.class, generalCriteria).getStates();
+
+        boolean inputFound = false;
+
+        for (StateAndRef<MetalState> metalState: metalStates){
+            if(metalState.getState().getData().getMetalName().equals(metalName)
+            && metalState.getState().getData().getWeight() == weight) {
+                this.x = x;
+                inputFound = true;
+            }
+
+        }
+
+        if(!inputFound)
+            throw new FlowException("Metal State was not found.");
+
+        return metalStates.get(this.x);
     }
 }
